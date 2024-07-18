@@ -5,7 +5,7 @@ from auditwheel.wheeltools import InWheelCtx
 from auditwheel.elfutils import elf_file_filter
 from auditwheel.repair import copylib
 from auditwheel.lddtree import lddtree
-from subprocess import check_call
+from subprocess import run
 import os
 import shutil
 import sys
@@ -27,10 +27,16 @@ def replace_tag(filename):
 
 class AlignedPatchelf(Patchelf):
     def set_soname(self, file_name: str, new_soname: str) -> None:
-        check_call(['patchelf', '--page-size', '65536', '--set-soname', new_soname, file_name])
+        patchelf_path = shutil.which('patchelf')
+        if not patchelf_path:
+            raise FileNotFoundError("patchelf not found in PATH")
+        run([patchelf_path, '--page-size', '65536', '--set-soname', new_soname, file_name], check=True)
 
     def replace_needed(self, file_name: str, soname: str, new_soname: str) -> None:
-        check_call(['patchelf', '--page-size', '65536', '--replace-needed', soname, new_soname, file_name])
+        patchelf_path = shutil.which('patchelf')
+        if not patchelf_path:
+            raise FileNotFoundError("patchelf not found in PATH")
+        run([patchelf_path, '--page-size', '65536', '--replace-needed', soname, new_soname, file_name], check=True)
 
 
 def embed_library(whl_path, lib_soname, update_tag=False):

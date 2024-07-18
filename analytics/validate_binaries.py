@@ -64,8 +64,11 @@ def main() -> None:
                 size_format(version["size"])
             ))
 
-        assert len(expected_builds) > 0, "expected builds set should not be empty."
-        assert expected_builds == actual_builds, (
+        if len(expected_builds) == 0:
+            raise ValueError("expected builds set should not be empty.")
+        if expected_builds != actual_builds:
+            raise ValueError(
+            f"Missing following builds in conda: {expected_builds.difference(actual_builds)} for platform {platform}"
             f"Missing following builds in conda: {expected_builds.difference(actual_builds)} for platform {platform}"
         )
 

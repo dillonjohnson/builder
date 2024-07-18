@@ -111,8 +111,8 @@ def output_results(bytes_cache: dict) -> None:
             package_results[val.package_name][val.package_version] += (
                 val.downloads
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error processing {val.download_uri}: {e}")
     print("=-=-= Results =-=-=")
     print("=-=-= OS =-=-=")
     total_os_num = sum(os_results.values())

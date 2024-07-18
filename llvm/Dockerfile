@@ -9,7 +9,12 @@ RUN apt-get update && apt-get install -y \
         make \
         python3 \
         python3-dev \
-        xz-utils
+        xz-utils \
+        sudo
+
+# Create a non-root user
+RUN useradd -m -s /bin/bash llvmuser && echo "llvmuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+USER llvmuser
 
 # Build LLVM with CXX11 ABI (default)
 RUN mkdir -p /opt/llvm /tmp/llvm/build
@@ -47,6 +52,10 @@ RUN cmake -G "Unix Makefiles" \
 RUN make -j"$(nproc --ignore=2)" && make install
 
 
-FROM alpine as final
+FROM alpine:3.14 as final
+USER root
 COPY --from=dev /opt/llvm /opt/llvm
+USER llvmuser
+USER root
 COPY --from=dev /opt/llvm_no_cxx11_abi /opt/llvm_no_cxx11_abi
+USER llvmuser

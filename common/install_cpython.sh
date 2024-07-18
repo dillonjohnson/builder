@@ -39,8 +39,8 @@ function do_cpython_build {
     # -Wformat added for https://bugs.python.org/issue17547 on Python 2.6
     CFLAGS="-Wformat" ./configure --prefix=${prefix} ${openssl_flags} ${shared_flags} > /dev/null
 
-    make -j40 > /dev/null
-    make install > /dev/null
+    make -j40
+    make install
 
     if [[ "${shared_flags}" == "--enable-shared" ]]; then
         patchelf --set-rpath '$ORIGIN/../lib' ${prefix}/bin/python3
