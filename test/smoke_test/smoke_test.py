@@ -193,7 +193,8 @@ def smoke_test_conv2d() -> None:
     m = nn.Conv2d(16, 33, 3, stride=2)
     # non-square kernels and unequal stride and with padding
     m = nn.Conv2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2))
-    assert m is not None
+    if m is None:
+        raise RuntimeError("Expected m to be a valid nn.Conv2d instance, but got None")
     # non-square kernels and unequal stride and with padding and dilation
     basic_conv = nn.Conv2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2), dilation=(3, 1))
     input = torch.randn(20, 16, 50, 100)
@@ -205,7 +206,8 @@ def smoke_test_conv2d() -> None:
         x = torch.randn(1, 3, 24, 24, device="cuda")
         with torch.cuda.amp.autocast():
             out = conv(x)
-        assert out is not None
+        if out is None:
+            raise RuntimeError("Expected output is None")
 
         supported_dtypes = [torch.float16, torch.float32, torch.float64]
         for dtype in supported_dtypes:
@@ -213,18 +215,21 @@ def smoke_test_conv2d() -> None:
             conv = basic_conv.to(dtype).cuda()
             input = torch.randn(20, 16, 50, 100, device="cuda").type(dtype)
             output = conv(input)
-            assert output is not None
+            if output is None:
+                raise RuntimeError("Expected output is None")
 
 
 def test_linalg(device="cpu") -> None:
     print(f"Testing smoke_test_linalg on {device}")
     A = torch.randn(5, 3, device=device)
     U, S, Vh = torch.linalg.svd(A, full_matrices=False)
-    assert U.shape == A.shape and S.shape == torch.Size([3]) and Vh.shape == torch.Size([3, 3])
+    if not (U.shape == A.shape and S.shape == torch.Size([3]) and Vh.shape == torch.Size([3, 3])):
+        raise RuntimeError("Shape mismatch: U.shape, S.shape, or Vh.shape is incorrect.")
     torch.dist(A, U @ torch.diag(S) @ Vh)
 
     U, S, Vh = torch.linalg.svd(A)
-    assert U.shape == torch.Size([5, 5]) and S.shape == torch.Size([3]) and Vh.shape == torch.Size([3, 3])
+    if not (U.shape == torch.Size([5, 5]) and S.shape == torch.Size([3]) and Vh.shape == torch.Size([3, 3])):
+        raise RuntimeError("Shape mismatch: U.shape, S.shape, or Vh.shape is incorrect.")
     torch.dist(A, U[:, :3] @ torch.diag(S) @ Vh)
 
     A = torch.randn(7, 5, 3, device=device)
@@ -269,22 +274,22 @@ def smoke_test_modules():
             if not os.path.exists(f"{cwd}/{module['repo_name']}"):
                 print(f"Path does not exist: {cwd}/{module['repo_name']}")
                 try:
+                    # Using a list to avoid shell injection
                     subprocess.check_output(
-                        f"git clone --depth 1 {module['repo']}",
+                        ["git", "clone", "--depth", "1", module['repo']],
                         stderr=subprocess.STDOUT,
-                        shell=True,
                     )
                 except subprocess.CalledProcessError as exc:
                     raise RuntimeError(
                         f"Cloning {module['repo']} FAIL: {exc.returncode} Output: {exc.output}"
                     ) from exc
             try:
-                smoke_test_command = f"python3 {module['smoke_test']}"
+                # Constructing the command using a list to avoid shell injection
+                smoke_test_command = ["python3", module['smoke_test']]
                 if target_os == 'windows':
-                    smoke_test_command = f"python {module['smoke_test']}"
+                    smoke_test_command = ["python", module['smoke_test']]
                 output = subprocess.check_output(
-                    smoke_test_command, stderr=subprocess.STDOUT, shell=True,
-                    universal_newlines=True)
+                    smoke_test_command, stderr=subprocess.STDOUT, universal_newlines=True)
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(f"Module {module['name']} FAIL: {exc.returncode} Output: {exc.output}") from exc
             else:

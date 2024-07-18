@@ -3,6 +3,7 @@
 import os.path
 import shutil
 import subprocess
+import shlex
 import tempfile
 import zipfile
 
@@ -82,7 +83,7 @@ def validate_file_metadata(build: str, package: str, version: str):
 
     try:
         check_wheels = subprocess.run(
-            ["check-wheel-contents", tmp_file, "--ignore", "W002,W009,W004"],
+            [shutil.which("check-wheel-contents"), tmp_file, "--ignore", "W002,W009,W004"],
             capture_output=True,
             text=True,
             check=True,

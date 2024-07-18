@@ -67,6 +67,7 @@ def _run_command(
     check: bool,
     cwd: os.PathLike[Any] | None,
 ) -> subprocess.CompletedProcess[bytes]:
+    # Sanitize input to prevent command injection
     logging.debug("$ %s", " ".join(args))
     start_time = time.monotonic()
     try:
@@ -109,7 +110,7 @@ def run_command(
     while True:
         try:
             return _run_command(
-                args, timeout=timeout, stdin=stdin, input=input, check=check, cwd=cwd
+                sanitize_input(args), timeout=timeout, stdin=stdin, input=input, check=check, cwd=cwd
             )
         except subprocess.TimeoutExpired as err:
             if remaining_retries == 0:
@@ -209,6 +210,10 @@ def format_lint_message(
     return message
 
 
+def sanitize_input(input_list: list[str]) -> list[str]:
+    """Sanitize input to prevent command injection."""
+    return [os.path.normpath(os.path.basename(item)) for item in input_list]
+
 def check_files(
     filenames: list[str],
     severities: dict[str, LintSeverity],
@@ -219,6 +224,9 @@ def check_files(
     explain: bool,
     show_disable: bool,
 ) -> list[LintMessage]:
+    filenames = sanitize_input(filenames)
+    if config:
+        config = os.path.normpath(os.path.basename(config))
     try:
         proc = run_command(
             [
@@ -415,7 +423,8 @@ def main() -> None:
     if args.severity:
         for severity in args.severity:
             parts = severity.split(":", 1)
-            assert len(parts) == 2, f"invalid severity `{severity}`"
+            if len(parts) != 2:
+                raise ValueError(f"invalid severity `{severity}`")
             severities[parts[0]] = LintSeverity(parts[1])
 
     lint_messages = check_files(

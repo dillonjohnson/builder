@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from enum import Enum
+import shlex
 from typing import Any, List, NamedTuple, Optional
 
 
@@ -49,10 +50,8 @@ def run_command(
     logging.debug("$ %s", " ".join(args))
     start_time = time.monotonic()
     try:
-        return subprocess.run(
-            args,
-            capture_output=True,
-        )
+        safe_args = [shlex.quote(arg) for arg in args]
+        return subprocess.run(safe_args, capture_output=True, check=True)
     finally:
         end_time = time.monotonic()
         logging.debug("took %dms", (end_time - start_time) * 1000)
@@ -73,7 +72,7 @@ def lint_file(
 
     if allowlist_pattern:
         try:
-            proc = run_command(["grep", "-nEHI", allowlist_pattern, filename])
+            proc = run_command(["grep", "-nEHI", allowlist_pattern, filename.split()])
         except Exception as err:
             return LintMessage(
                 path=None,
@@ -112,7 +111,7 @@ def lint_file(
             original = f.read()
 
         try:
-            proc = run_command(["sed", "-r", replace_pattern, filename])
+            proc = run_command(["sed", "-r", replace_pattern, filename.split()])
             replacement = proc.stdout.decode("utf-8")
         except Exception as err:
             return LintMessage(
@@ -223,7 +222,7 @@ def main() -> None:
 
     try:
         proc = run_command(
-            ["grep", "-nEHI", *files_with_matches, args.pattern, *args.filenames]
+            ["grep", "-nEHI", *files_with_matches, args.pattern, *args.filenames.split()]
         )
     except Exception as err:
         err_msg = LintMessage(

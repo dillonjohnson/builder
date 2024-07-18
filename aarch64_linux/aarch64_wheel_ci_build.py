@@ -3,7 +3,9 @@
 
 import os
 import shutil
+import subprocess
 from subprocess import check_output, check_call
+import tempfile
 from pygit2 import Repository
 from typing import List
 
@@ -12,7 +14,11 @@ def list_dir(path: str) -> List[str]:
     """'
     Helper for getting paths for Python
     """
-    return check_output(["ls", "-1", path]).decode().split("\n")
+    # Validate the path input
+    if not os.path.isdir(path):
+        raise ValueError(f"Invalid directory path: {path}")
+
+    return os.listdir(path)
 
 def build_ArmComputeLibrary() -> None:
     """
@@ -34,9 +40,13 @@ def build_ArmComputeLibrary() -> None:
     acl_install_dir = "/acl"
     acl_checkout_dir = "ComputeLibrary"
     os.makedirs(acl_install_dir)
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise RuntimeError("git executable not found in PATH")
+    
     check_call(
         [
-            "git",
+            git_executable,
             "clone",
             "https://github.com/ARM-software/ComputeLibrary.git",
             "-b",
@@ -61,54 +71,57 @@ def update_wheel(wheel_path) -> None:
     """
     folder = os.path.dirname(wheel_path)
     wheelname = os.path.basename(wheel_path)
-    os.mkdir(f"{folder}/tmp")
-    os.system(f"unzip {wheel_path} -d {folder}/tmp")
-    libs_to_copy = [
-        "/usr/local/cuda/extras/CUPTI/lib64/libcupti.so.12",
-        "/usr/local/cuda/lib64/libcudnn.so.9",
-        "/usr/local/cuda/lib64/libcublas.so.12",
-        "/usr/local/cuda/lib64/libcublasLt.so.12",
-        "/usr/local/cuda/lib64/libcudart.so.12",
-        "/usr/local/cuda/lib64/libcufft.so.11",
-        "/usr/local/cuda/lib64/libcusparse.so.12",
-        "/usr/local/cuda/lib64/libcusparseLt.so.0",
-        "/usr/local/cuda/lib64/libcusolver.so.11",
-        "/usr/local/cuda/lib64/libcurand.so.10",
-        "/usr/local/cuda/lib64/libnvToolsExt.so.1",
-        "/usr/local/cuda/lib64/libnvJitLink.so.12",
-        "/usr/local/cuda/lib64/libnvrtc.so.12",
-        "/usr/local/cuda/lib64/libnvrtc-builtins.so.12.4",
-        "/usr/local/cuda/lib64/libcudnn_adv.so.9",
-        "/usr/local/cuda/lib64/libcudnn_cnn.so.9",
-        "/usr/local/cuda/lib64/libcudnn_graph.so.9",
-        "/usr/local/cuda/lib64/libcudnn_ops.so.9",
-        "/usr/local/cuda/lib64/libcudnn_engines_runtime_compiled.so.9",
-        "/usr/local/cuda/lib64/libcudnn_engines_precompiled.so.9",
-        "/usr/local/cuda/lib64/libcudnn_heuristic.so.9",
-        "/opt/conda/envs/aarch64_env/lib/libgomp.so.1",
-        "/opt/OpenBLAS/lib/libopenblas.so.0",
-        "/usr/lib64/libgfortran.so.5",
-        "/acl/build/libarm_compute.so",
-        "/acl/build/libarm_compute_graph.so",
-    ]
-    # Copy libraries to unzipped_folder/a/lib
-    for lib_path in libs_to_copy:
-        lib_name = os.path.basename(lib_path)
-        shutil.copy2(lib_path, f"{folder}/tmp/torch/lib/{lib_name}")
-    os.system(
-        f"cd {folder}/tmp/torch/lib/; patchelf --set-rpath '$ORIGIN' {folder}/tmp/torch/lib/libtorch_cuda.so"
-    )
-    os.system(
-        f"cd {folder}/tmp/torch/lib/; patchelf --set-rpath '$ORIGIN' {folder}/tmp/torch/lib/libcudnn_graph.so.9"
-    )
-    os.mkdir(f"{folder}/cuda_wheel")
-    os.system(f"cd {folder}/tmp/; zip -r {folder}/cuda_wheel/{wheelname} *")
-    shutil.move(
-        f"{folder}/cuda_wheel/{wheelname}",
-        f"{folder}/{wheelname}",
-        copy_function=shutil.copy2,
-    )
-    os.system(f"rm -rf {folder}/tmp/ {folder}/cuda_wheel/")
+    with tempfile.TemporaryDirectory(dir=folder) as tmp_dir:
+        subprocess.run(["unzip", wheel_path, "-d", tmp_dir], check=True)
+        libs_to_copy = [
+            "/usr/local/cuda/extras/CUPTI/lib64/libcupti.so.12",
+            "/usr/local/cuda/lib64/libcudnn.so.9",
+            "/usr/local/cuda/lib64/libcublas.so.12",
+            "/usr/local/cuda/lib64/libcublasLt.so.12",
+            "/usr/local/cuda/lib64/libcudart.so.12",
+            "/usr/local/cuda/lib64/libcufft.so.11",
+            "/usr/local/cuda/lib64/libcusparse.so.12",
+            "/usr/local/cuda/lib64/libcusparseLt.so.0",
+            "/usr/local/cuda/lib64/libcusolver.so.11",
+            "/usr/local/cuda/lib64/libcurand.so.10",
+            "/usr/local/cuda/lib64/libnvToolsExt.so.1",
+            "/usr/local/cuda/lib64/libnvJitLink.so.12",
+            "/usr/local/cuda/lib64/libnvrtc.so.12",
+            "/usr/local/cuda/lib64/libnvrtc-builtins.so.12.4",
+            "/usr/local/cuda/lib64/libcudnn_adv.so.9",
+            "/usr/local/cuda/lib64/libcudnn_cnn.so.9",
+            "/usr/local/cuda/lib64/libcudnn_graph.so.9",
+            "/usr/local/cuda/lib64/libcudnn_ops.so.9",
+            "/usr/local/cuda/lib64/libcudnn_engines_runtime_compiled.so.9",
+            "/usr/local/cuda/lib64/libcudnn_engines_precompiled.so.9",
+            "/usr/local/cuda/lib64/libcudnn_heuristic.so.9",
+            "/opt/conda/envs/aarch64_env/lib/libgomp.so.1",
+            "/opt/OpenBLAS/lib/libopenblas.so.0",
+            "/usr/lib64/libgfortran.so.5",
+            "/acl/build/libarm_compute.so",
+            "/acl/build/libarm_compute_graph.so",
+        ]
+        # Copy libraries to unzipped_folder/a/lib
+        for lib_path in libs_to_copy:
+            lib_name = os.path.basename(lib_path)
+            shutil.copy2(lib_path, f"{tmp_dir}/torch/lib/{lib_name}")
+        subprocess.run(
+            ["patchelf", "--set-rpath", "$ORIGIN", "libtorch_cuda.so"],
+            cwd=os.path.join(tmp_dir, "torch", "lib"),
+            check=True
+        )
+        subprocess.run(
+            ["patchelf", "--set-rpath", "$ORIGIN", "libcudnn_graph.so.9"],
+            cwd=os.path.join(tmp_dir, "torch", "lib"),
+            check=True
+        )
+        with tempfile.TemporaryDirectory(prefix="cuda_wheel_") as cuda_wheel_dir:
+            subprocess.run(["zip", "-r", f"{cuda_wheel_dir}/{wheelname}", "."], cwd=tmp_dir)
+            shutil.move(
+                f"{cuda_wheel_dir}/{wheelname}",
+                f"{folder}/{wheelname}",
+                copy_function=shutil.copy2,
+            )
 
 
 def complete_wheel(folder: str) -> str:
@@ -119,7 +132,7 @@ def complete_wheel(folder: str) -> str:
 
     if "pytorch" in folder and not enable_cuda:
         print("Repairing Wheel with AuditWheel")
-        check_call(["auditwheel", "repair", f"dist/{wheel_name}"], cwd=folder)
+        check_call(["/usr/local/bin/auditwheel", "repair", f"dist/{wheel_name}"], cwd=folder)
         repaired_wheel_name = list_dir(f"/{folder}/wheelhouse")[0]
 
         print(f"Moving {repaired_wheel_name} wheel to /{folder}/dist")
@@ -167,7 +180,7 @@ if __name__ == "__main__":
 
     print("Building PyTorch wheel")
     build_vars = "MAX_JOBS=5 CMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=0x10000 "
-    os.system("cd /pytorch; python setup.py clean")
+    subprocess.run([shutil.which("python"), "setup.py", "clean"], cwd="/pytorch", check=True)
 
     override_package_version = os.getenv("OVERRIDE_PACKAGE_VERSION")
     if override_package_version is not None:
@@ -176,13 +189,17 @@ if __name__ == "__main__":
             f"BUILD_TEST=0 PYTORCH_BUILD_VERSION={version} PYTORCH_BUILD_NUMBER=1 "
         )
     elif branch in ["nightly", "master"]:
+        git_executable = shutil.which("git")
+        if git_executable is None:
+            raise RuntimeError("git executable not found in PATH")
+    
         build_date = (
-            check_output(["git", "log", "--pretty=format:%cs", "-1"], cwd="/pytorch")
+            check_output([git_executable, "log", "--pretty=format:%cs", "-1"], cwd="/pytorch")
             .decode()
             .replace("-", "")
         )
         version = (
-            check_output(["cat", "version.txt"], cwd="/pytorch").decode().strip()[:-2]
+            check_output(["/bin/cat", "version.txt"], cwd="/pytorch").decode().strip()[:-2]
         )
         if enable_cuda:
             desired_cuda = os.getenv("DESIRED_CUDA")
@@ -209,7 +226,7 @@ if __name__ == "__main__":
     else:
         print("build pytorch without mkldnn backend")
 
-    os.system(f"cd /pytorch; {build_vars} python3 setup.py bdist_wheel")
+    subprocess.run([shutil.which("python3"), "setup.py", "bdist_wheel"], cwd="/pytorch", env={**os.environ, **dict(var.split('=') for var in build_vars.split())})
     if enable_cuda:
         print("Updating Cuda Dependency")
         filename = os.listdir("/pytorch/dist/")

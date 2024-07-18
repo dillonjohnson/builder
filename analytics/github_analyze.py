@@ -7,6 +7,7 @@ from urllib.error import HTTPError
 import json
 import enum
 import os
+from urllib.parse import urlparse
 
 class IssueState(enum.Enum):
     OPEN = "open"
@@ -110,11 +111,16 @@ def parse_medium_format(lines: Union[str, List[str]]) -> GitCommit:
     # TODO: Handle merge commits correctly
     if len(lines) > 1 and lines[1].startswith("Merge:"):
         del lines[1]
-    assert len(lines) > 5
-    assert lines[0].startswith("commit")
-    assert lines[1].startswith("Author: ")
-    assert lines[2].startswith("Date: ")
-    assert len(lines[3]) == 0
+    if len(lines) <= 5:
+        raise ValueError("Expected more than 5 lines in the commit message")
+    if not lines[0].startswith("commit"):
+        raise ValueError("Expected 'commit' at the start of line 0")
+    if not lines[1].startswith("Author: "):
+        raise ValueError("Expected 'Author: ' at the start of line 1")
+    if not lines[2].startswith("Date: "):
+        raise ValueError("Expected 'Date: ' at the start of line 2")
+    if len(lines[3]) != 0:
+        raise ValueError("Expected an empty line at index 3")
     return GitCommit(commit_hash=lines[0].split()[1].strip(),
                      author=lines[1].split(":", 1)[1].strip(),
                      author_date=datetime.fromtimestamp(int(lines[2].split(":", 1)[1].strip())),
@@ -142,13 +148,20 @@ def parse_fuller_format(lines: Union[str, List[str]]) -> GitCommit:
     # TODO: Handle merge commits correctly
     if len(lines) > 1 and lines[1].startswith("Merge:"):
         del lines[1]
-    assert len(lines) > 7
-    assert lines[0].startswith("commit")
-    assert lines[1].startswith("Author: ")
-    assert lines[2].startswith("AuthorDate: ")
-    assert lines[3].startswith("Commit: ")
-    assert lines[4].startswith("CommitDate: ")
-    assert len(lines[5]) == 0
+    if len(lines) <= 7:
+        raise ValueError("Expected more than 7 lines in the commit message")
+    if not lines[0].startswith("commit"):
+        raise ValueError("Expected 'commit' at the start of line 0")
+    if not lines[1].startswith("Author: "):
+        raise ValueError("Expected 'Author: ' at the start of line 1")
+    if not lines[2].startswith("AuthorDate: "):
+        raise ValueError("Expected 'AuthorDate: ' at the start of line 2")
+    if not lines[3].startswith("Commit: "):
+        raise ValueError("Expected 'Commit: ' at the start of line 3")
+    if not lines[4].startswith("CommitDate: "):
+        raise ValueError("Expected 'CommitDate: ' at the start of line 4")
+    if len(lines[5]) != 0:
+        raise ValueError("Expected an empty line at index 5")
 
     prUrl = ""
     for line in lines:
@@ -167,8 +180,10 @@ def parse_fuller_format(lines: Union[str, List[str]]) -> GitCommit:
 
 
 def _check_output(items: List[str], encoding='utf-8') -> str:
-    from subprocess import check_output
-    return check_output(items).decode(encoding)
+    from subprocess import run, PIPE
+
+    result = run(items, stdout=PIPE, stderr=PIPE, text=True, check=True)
+    return result.stdout
 
 
 def get_git_remotes(path: str) -> Dict[str, str]:
@@ -218,12 +233,19 @@ class GitRepo:
 def build_commit_dict(commits: List[GitCommit]) -> Dict[str, GitCommit]:
     rc = {}
     for commit in commits:
-        assert commit.commit_hash not in rc
+        if commit.commit_hash in rc:
+            raise ValueError(f"Duplicate commit hash found: {commit.commit_hash}")
         rc[commit.commit_hash] = commit
     return rc
 
 
+def is_url_safe(url: str) -> bool:
+    parsed_url = urlparse(url)
+    return parsed_url.scheme in {"http", "https"}
+
 def fetch_json(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    if not is_url_safe(url):
+        raise ValueError(f"Unsafe URL scheme in {url}")
     headers = {'Accept': 'application/vnd.github.v3+json'}
     token = os.environ.get("GITHUB_TOKEN")
     if token is not None and url.startswith('https://api.github.com/'):
@@ -241,7 +263,8 @@ def fetch_json(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[s
 def fetch_multipage_json(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     if params is None:
         params = {}
-    assert "page" not in params
+    if "page" in params:
+        raise ValueError('"page" should not be in params')
     page_idx, rc, prev_len, params = 1, [], -1, params.copy()
     while len(rc) > prev_len:
         prev_len = len(rc)

@@ -15,17 +15,17 @@ ARG DEVTOOLSET_VERSION=9
 RUN sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/*.repo
 RUN sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/*.repo
 RUN sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/*.repo
-RUN yum install -y wget curl perl util-linux xz bzip2 git patch which perl zlib-devel
+RUN yum install -y wget curl perl util-linux xz bzip2 git patch which perl zlib-devel && yum clean all
 # Just add everything as a safe.directory for git since these will be used in multiple places with git
 RUN git config --global --add safe.directory '*'
-RUN yum install -y yum-utils centos-release-scl
+RUN yum install -y yum-utils centos-release-scl && yum clean all
 RUN yum-config-manager --enable rhel-server-rhscl-7-rpms
 # Note: After running yum-config-manager --enable rhel-server-rhscl-7-rpms
 # patch is required once again. Somehow this steps adds mirror.centos.org
 RUN sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/*.repo
 RUN sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/*.repo
 RUN sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/*.repo
-RUN yum install -y devtoolset-${DEVTOOLSET_VERSION}-gcc devtoolset-${DEVTOOLSET_VERSION}-gcc-c++ devtoolset-${DEVTOOLSET_VERSION}-gcc-gfortran devtoolset-${DEVTOOLSET_VERSION}-binutils
+RUN yum install -y devtoolset-${DEVTOOLSET_VERSION}-gcc devtoolset-${DEVTOOLSET_VERSION}-gcc-c++ devtoolset-${DEVTOOLSET_VERSION}-gcc-gfortran devtoolset-${DEVTOOLSET_VERSION}-binutils && yum clean all
 ENV PATH=/opt/rh/devtoolset-${DEVTOOLSET_VERSION}/root/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=/opt/rh/devtoolset-${DEVTOOLSET_VERSION}/root/usr/lib64:/opt/rh/devtoolset-${DEVTOOLSET_VERSION}/root/usr/lib:$LD_LIBRARY_PATH
 
@@ -36,57 +36,58 @@ RUN wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm &
 # cmake-3.18.4 from pip
 RUN yum install -y python3-pip && \
     python3 -mpip install cmake==3.18.4 && \
-    ln -s /usr/local/bin/cmake /usr/bin/cmake
+    ln -s /usr/local/bin/cmake /usr/bin/cmake && \
+    yum clean all
 
-RUN yum install -y autoconf aclocal automake make
+RUN yum install -y autoconf aclocal automake make && yum clean all
 
 FROM base as openssl
 # Install openssl (this must precede `build python` step)
 # (In order to have a proper SSL module, Python is compiled
 # against a recent openssl [see env vars above], which is linked
 # statically. We delete openssl afterwards.)
-ADD ./common/install_openssl.sh install_openssl.sh
+COPY ./common/install_openssl.sh install_openssl.sh
 RUN bash ./install_openssl.sh && rm install_openssl.sh
 
 # EPEL for cmake
 FROM base as patchelf
 # Install patchelf
-ADD ./common/install_patchelf.sh install_patchelf.sh
+COPY ./common/install_patchelf.sh install_patchelf.sh
 RUN bash ./install_patchelf.sh && rm install_patchelf.sh
 RUN cp $(which patchelf) /patchelf
 
 FROM patchelf as python
 # build python
 COPY manywheel/build_scripts /build_scripts
-ADD ./common/install_cpython.sh /build_scripts/install_cpython.sh
+COPY ./common/install_cpython.sh /build_scripts/install_cpython.sh
 RUN bash build_scripts/build.sh && rm -r build_scripts
 
 FROM base as cuda
 ARG BASE_CUDA_VERSION=10.2
 # Install CUDA
-ADD ./common/install_cuda.sh install_cuda.sh
+COPY ./common/install_cuda.sh install_cuda.sh
 RUN bash ./install_cuda.sh ${BASE_CUDA_VERSION} && rm install_cuda.sh
 
 FROM base as intel
 # MKL
-ADD ./common/install_mkl.sh install_mkl.sh
+COPY ./common/install_mkl.sh install_mkl.sh
 RUN bash ./install_mkl.sh && rm install_mkl.sh
 
 FROM base as magma
 ARG BASE_CUDA_VERSION=10.2
 # Install magma
-ADD ./common/install_magma.sh install_magma.sh
+COPY ./common/install_magma.sh install_magma.sh
 RUN bash ./install_magma.sh ${BASE_CUDA_VERSION} && rm install_magma.sh
 
 FROM base as jni
 # Install java jni header
-ADD ./common/install_jni.sh install_jni.sh
-ADD ./java/jni.h jni.h
+COPY ./common/install_jni.sh install_jni.sh
+COPY ./java/jni.h jni.h
 RUN bash ./install_jni.sh && rm install_jni.sh
 
 FROM base as libpng
 # Install libpng
-ADD ./common/install_libpng.sh install_libpng.sh
+COPY ./common/install_libpng.sh install_libpng.sh
 RUN bash ./install_libpng.sh && rm install_libpng.sh
 
 FROM ${GPU_IMAGE} as common
@@ -114,10 +115,12 @@ RUN yum install -y \
         wget \
         which \
         xz \
-        yasm
+        yasm && \
+    yum clean all
 RUN yum install -y \
     https://repo.ius.io/ius-release-el7.rpm \
-    https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
+    yum clean all
 RUN yum swap -y git git236-core
 # git236+ would refuse to run git commands in repos owned by other users
 # Which causes version check to fail, as pytorch repo is bind-mounted into the image
@@ -165,7 +168,7 @@ RUN yum install -y python3-pip && \
     ln -s /usr/local/bin/cmake /usr/bin/cmake
 
 # ninja
-RUN yum install -y ninja-build
+RUN yum install -y ninja-build && yum clean all
 
 FROM cpu_final as cuda_final
 RUN rm -rf /usr/local/cuda-${BASE_CUDA_VERSION}
@@ -183,15 +186,15 @@ ENV PYTORCH_ROCM_ARCH ${PYTORCH_ROCM_ARCH}
 # Remove below when ROCm5.7 is not in support matrix anymore.
 ENV ROCM_PATH /opt/rocm
 # No need to install ROCm as base docker image should have full ROCm install
-#ADD ./common/install_rocm.sh install_rocm.sh
+#COPY ./common/install_rocm.sh install_rocm.sh
 #RUN ROCM_VERSION=${ROCM_VERSION} bash ./install_rocm.sh && rm install_rocm.sh
-ADD ./common/install_rocm_drm.sh install_rocm_drm.sh
+COPY ./common/install_rocm_drm.sh install_rocm_drm.sh
 RUN bash ./install_rocm_drm.sh && rm install_rocm_drm.sh
 # cmake3 is needed for the MIOpen build
 RUN ln -sf /usr/local/bin/cmake /usr/bin/cmake3
-ADD ./common/install_rocm_magma.sh install_rocm_magma.sh
+COPY ./common/install_rocm_magma.sh install_rocm_magma.sh
 RUN bash ./install_rocm_magma.sh && rm install_rocm_magma.sh
-ADD ./common/install_miopen.sh install_miopen.sh
+COPY ./common/install_miopen.sh install_miopen.sh
 RUN bash ./install_miopen.sh ${ROCM_VERSION} && rm install_miopen.sh
 
 # Install AOTriton
@@ -199,3 +202,7 @@ COPY ./common/aotriton_version.txt aotriton_version.txt
 COPY ./common/install_aotriton.sh install_aotriton.sh
 RUN bash ./install_aotriton.sh /opt/rocm && rm install_aotriton.sh aotriton_version.txt
 ENV AOTRITON_INSTALLED_PREFIX /opt/rocm/aotriton
+
+# Create a non-root user and switch to it
+RUN useradd -m nonrootuser
+USER nonrootuser

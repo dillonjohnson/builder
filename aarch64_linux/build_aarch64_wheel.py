@@ -9,10 +9,12 @@
 
 
 import boto3
+import tempfile
 import os
 import subprocess
 import sys
 import time
+import shlex
 from typing import Dict, List, Optional, Tuple, Union
 
 
@@ -97,21 +99,27 @@ class RemoteHost:
     def _split_cmd(args: Union[str, List[str]]) -> List[str]:
         return args.split() if isinstance(args, str) else args
 
+    import shlex
+
     def run_ssh_cmd(self, args: Union[str, List[str]]) -> None:
-        subprocess.check_call(self._gen_ssh_prefix() + self._split_cmd(args))
+        if isinstance(args, str):
+            args = shlex.split(shlex.quote(args))
+        subprocess.check_call(self._gen_ssh_prefix() + self._split_cmd(args), shell=False)
 
     def check_ssh_output(self, args: Union[str, List[str]]) -> str:
-        return subprocess.check_output(self._gen_ssh_prefix() + self._split_cmd(args)).decode("utf-8")
+        if isinstance(args, str):
+            args = shlex.split(args)
+        return subprocess.check_output(self._gen_ssh_prefix() + args, shell=False).decode("utf-8")
 
     def scp_upload_file(self, local_file: str, remote_file: str) -> None:
-        subprocess.check_call(["scp", "-i", self.keyfile_path, local_file,
-                              f"{self.login_name}@{self.addr}:{remote_file}"])
+        subprocess.check_call(["/usr/bin/scp", "-i", self.keyfile_path, local_file,
+                              f"{self.login_name}@{self.addr}:{remote_file}"], shell=False)
 
     def scp_download_file(self, remote_file: str, local_file: Optional[str] = None) -> None:
         if local_file is None:
             local_file = "."
-        subprocess.check_call(["scp", "-i", self.keyfile_path,
-                              f"{self.login_name}@{self.addr}:{remote_file}", local_file])
+        subprocess.check_call(["/usr/bin/scp", "-i", self.keyfile_path,
+                              f"{self.login_name}@{self.addr}:{remote_file}", local_file], shell=False)
 
     def start_docker(self, image="quay.io/pypa/manylinux2014_aarch64:latest") -> None:
         self.run_ssh_cmd("sudo apt-get install -y docker.io")
@@ -126,10 +134,13 @@ class RemoteHost:
     def run_cmd(self, args: Union[str, List[str]]) -> None:
         if not self.using_docker():
             return self.run_ssh_cmd(args)
-        assert self.container_id is not None
+        if self.container_id is None:
+            raise ValueError("Container ID is not set.")
         docker_cmd = self._gen_ssh_prefix() + ['docker', 'exec', '-i', self.container_id, 'bash']
-        p = subprocess.Popen(docker_cmd, stdin=subprocess.PIPE)
-        p.communicate(input=" ".join(["source .bashrc && "] + self._split_cmd(args)).encode("utf-8"))
+        import shlex
+        sanitized_args = shlex.split(args) if isinstance(args, str) else args
+        p = subprocess.Popen(docker_cmd, stdin=subprocess.PIPE, shell=False)
+        p.communicate(input=" ".join(["source .bashrc && "] + sanitized_args).encode("utf-8"))
         rc = p.wait()
         if rc != 0:
             raise subprocess.CalledProcessError(rc, docker_cmd)
@@ -137,9 +148,10 @@ class RemoteHost:
     def check_output(self, args: Union[str, List[str]]) -> str:
         if not self.using_docker():
             return self.check_ssh_output(args)
-        assert self.container_id is not None
+        if self.container_id is None:
+            raise ValueError("Container ID is not set.")
         docker_cmd = self._gen_ssh_prefix() + ['docker', 'exec', '-i', self.container_id, 'bash']
-        p = subprocess.Popen(docker_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        p = subprocess.Popen(docker_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
         (out, err) = p.communicate(input=" ".join(["source .bashrc && "] + self._split_cmd(args)).encode("utf-8"))
         rc = p.wait()
         if rc != 0:
@@ -157,10 +169,10 @@ class RemoteHost:
     def download_file(self, remote_file: str, local_file: Optional[str] = None) -> None:
         if not self.using_docker():
             return self.scp_download_file(remote_file, local_file)
-        tmp_file = os.path.join("/tmp", os.path.basename(remote_file))
-        self.run_ssh_cmd(["docker", "cp", f"{self.container_id}:/root/{remote_file}", tmp_file])
-        self.scp_download_file(tmp_file, local_file)
-        self.run_ssh_cmd(["rm", tmp_file])
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            self.run_ssh_cmd(["docker", "cp", f"{self.container_id}:/root/{remote_file}", tmp_file.name])
+            self.scp_download_file(tmp_file.name, local_file)
+        os.remove(tmp_file.name)
 
     def download_wheel(self, remote_file: str, local_file: Optional[str] = None) -> None:
         if self.using_docker() and local_file is None:
@@ -614,10 +626,10 @@ def replace_tag(filename):
 
 class AlignedPatchelf(Patchelf):
     def set_soname(self, file_name: str, new_soname: str) -> None:
-        check_call(['patchelf', '--page-size', '65536', '--set-soname', new_soname, file_name])
+        check_call(['patchelf', '--page-size', '65536', '--set-soname', new_soname, file_name], shell=False)
 
     def replace_needed(self, file_name: str, soname: str, new_soname: str) -> None:
-        check_call(['patchelf', '--page-size', '65536', '--replace-needed', soname, new_soname, file_name])
+        check_call(['patchelf', '--page-size', '65536', '--replace-needed', soname, new_soname, file_name], shell=False)
 
 
 def embed_library(whl_path, lib_soname, update_tag=False):

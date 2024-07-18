@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from typing import Dict, List
 from subprocess import check_output
+import shutil
 import os
 import sys
 
@@ -9,14 +10,22 @@ def get_defined_symbols(fname: str, verbose: bool = False) -> Dict[str, int]:
     if verbose:
         print(f"Processing {fname}...", end='', flush=True)
     if sys.platform == 'darwin':
-        lines = check_output(['nm', '--defined-only', '-n', fname]).decode('ascii').split("\n")[:-1]
+        nm_path = shutil.which('nm')
+        if nm_path is None:
+            raise FileNotFoundError("The 'nm' command is not found in the system PATH.")
+        lines = check_output([nm_path, '--defined-only', '-n', fname]).decode('ascii').split("\n")[:-1]
         rc = {}
         for idx, line in enumerate(lines):
             addr, stype, name = line.split(' ')
             size = 4 if idx + 1 == len(lines) else (int(lines[idx + 1].split(' ')[0], 16) - int(addr, 16))
             rc[name] = size
     else:
-        lines = check_output(['nm', '--print-size', '--defined-only', fname]).decode('ascii').split('\n')
+        nm_path = shutil.which('nm')
+        if nm_path is None:
+            raise FileNotFoundError("The 'nm' command is not found in the system PATH.")
+        if not os.path.isfile(fname):
+            raise ValueError(f"The file {fname} does not exist or is not a valid file.")
+        lines = check_output([nm_path, '--print-size', '--defined-only', fname]).decode('ascii').split('\n')
         rc = {e[3]: int(e[1], 16) for e in [line.split() for line in lines] if len(e) == 4}
     if verbose:
         print("done")
@@ -26,15 +35,28 @@ def get_defined_symbols(fname: str, verbose: bool = False) -> Dict[str, int]:
 def get_deps(fname: str) -> List[str]:
     if sys.platform == 'darwin':
         rc = []
-        lines = check_output(['otool', '-l', fname]).decode('ascii').split("\n")[1:-1]
+        otool_path = shutil.which('otool')
+        if otool_path is None:
+            raise FileNotFoundError("The 'otool' command is not found in the system PATH.")
+        if not os.path.isfile(fname):
+            raise ValueError(f"The file {fname} does not exist or is not a valid file.")
+        lines = check_output([otool_path, '-l', fname]).decode('ascii').split("\n")[1:-1]
         for idx, line in enumerate(lines):
             if line.strip() != 'cmd LC_LOAD_DYLIB':
                 continue
             path = lines[idx + 2].strip()
-            assert path.startswith('name')
+            if not path.startswith('name'):
+                raise ValueError(f"Expected path to start with 'name', but got: {path}")
             rc.append(os.path.basename(path.split(' ')[1]))
         return rc
-    lines = check_output(['readelf', '--dynamic', fname]).decode('ascii').split('\n')
+    readelf_path = shutil.which('readelf')
+    if readelf_path is None:
+        raise FileNotFoundError("The 'readelf' command is not found in the system PATH.")
+    if readelf_path is None:
+        raise FileNotFoundError("The 'readelf' command is not found in the system PATH.")
+    if not os.path.isfile(fname):
+        raise ValueError(f"The file {fname} does not exist or is not a valid file.")
+    lines = check_output([readelf_path, '--dynamic', fname]).decode('ascii').split('\n')
     return [line.split('[')[1][:-1] for line in lines if '(NEEDED)' in line]
 
 

@@ -2,6 +2,7 @@
 # Tool for analyzing sizes of CUDA kernels for various GPU architectures
 import os
 import struct
+import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -71,7 +72,11 @@ class ArFileCtx:
     def __enter__(self) -> str:
         self._pwd = os.getcwd()
         rc = self._tmpdir.__enter__()
-        subprocess.check_call(['ar', 'x', self.ar_name])
+        import shlex
+        ar_path = shutil.which('ar')
+        if ar_path is None:
+            raise RuntimeError("The 'ar' executable is not found in the system PATH.")
+        subprocess.check_call([ar_path, 'x', shlex.quote(self.ar_name)])
         return rc
 
     def __exit__(self, ex, value, tb) -> None:
